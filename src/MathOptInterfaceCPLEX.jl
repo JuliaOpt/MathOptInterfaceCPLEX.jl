@@ -35,7 +35,7 @@ function MOI.SolverInstance(s::MOICPLEXSolver)
         (LQOI.@LinQuadSolverInstanceBaseInit)...,
     )
     for (name,value) in s.options
-        CPX.setparam!(m.inner, CPX.XPRS_CONTROLS_DICT[name], value)
+        CPX.cpx_setparam!(m.inner.env, string(name), value)
     end
     # csi.inner.mipstart_effort = s.mipstart_effortlevel
     # if s.logfile != ""
@@ -57,7 +57,7 @@ end
 
 # LQOI.lqs_setparam!(env, name, val)
 # TODO fix this one
-LQOI.lqs_setparam!(m::CPLEXSolverInstance, name, val) = CPX.setparam!(m.inner, CPX.XPRS_CONTROLS_DICT[name], val)
+LQOI.lqs_setparam!(m::CPLEXSolverInstance, name, val) = CPX.cpx_setparam!(m.inner, string(name), val)
 
 # LQOI.lqs_setlogfile!(env, path)
 # TODO fix this one
@@ -123,7 +123,7 @@ const VAR_TYPE_MAP = Dict{Symbol,Cchar}(
 LQOI.lqs_vartype_map(m::CPLEXSolverInstance) = VAR_TYPE_MAP
 
 # LQOI.lqs_addsos(m, colvec, valvec, typ)
-LQOI.lqs_addsos!(m::CPX.Model, colvec, valvec, typ) = CPX.cpx_addsos!(m::CPX.Model, colvec, valvec, typ)
+LQOI.lqs_addsos!(m::CPX.Model, colvec, valvec, typ) = CPX.add_sos!(m::CPX.Model, typ, colvec, valvec)
 # LQOI.lqs_delsos(m, idx, idx)
 LQOI.lqs_delsos!(m::CPX.Model, idx1, idx2) = CPX.cpx_delsos!(m::CPX.Model, idx1, idx2)
 
@@ -135,8 +135,20 @@ LQOI.lqs_sertype_map(m::CPLEXSolverInstance) = SOS_TYPE_MAP
 
 # LQOI.lqs_getsos(m, idx)
 # TODO improve getting processes
-LQOI.lqs_getsos(m::CPX.Model, idx) = CPX.cpx_getsos(m::CPX.Model, idx)
+function LQOI.lqs_getsos(m::CPX.Model, idx)
+    indices, weights, types = CPX.cpx_getsos(m::CPX.Model, idx)
 
+    # types2 = Array{Symbol}(length(types))
+    # for i in eachindex(types)
+    #     if types[i] == Cchar('1')
+    #         types2[i] = :SOS1
+    #     elseif types[i] == Cchar('2')
+    #         types2[i] = :SOS2
+    #     end
+    # end
+
+    return indices, weights, types == Cchar('1') ? :SOS1 : :SOS2
+end
 # LQOI.lqs_getnumqconstrs(m)
 LQOI.lqs_getnumqconstrs(m::CPX.Model) = CPX.cpx_getnumqconstrs(m::CPX.Model)
 
@@ -204,132 +216,105 @@ LQOI.lqs_qpopt!(m::CPX.Model) = CPX.cpx_qpopt!(m::CPX.Model)
 # LQOI.lqs_lpopt!(m)
 LQOI.lqs_lpopt!(m::CPX.Model) = CPX.cpx_lpopt!(m::CPX.Model)
 
+
+const TERMINATION_STATUS_MAP = Dict(
+    CPX.CPX_STAT_OPTIMAL                => MOI.Success,
+    CPX.CPX_STAT_UNBOUNDED              => MOI.UnboundedNoResult,
+    CPX.CPX_STAT_INFEASIBLE             => MOI.InfeasibleNoResult,
+    CPX.CPX_STAT_INForUNBD              => MOI.InfeasibleOrUnbounded,
+    CPX.CPX_STAT_OPTIMAL_INFEAS         => MOI.Success,
+    CPX.CPX_STAT_NUM_BEST               => MOI.NumericalError,
+    CPX.CPX_STAT_ABORT_IT_LIM           => MOI.IterationLimit,
+    CPX.CPX_STAT_ABORT_TIME_LIM         => MOI.TimeLimit,
+    CPX.CPX_STAT_ABORT_OBJ_LIM          => MOI.ObjectiveLimit,
+    CPX.CPX_STAT_ABORT_USER             => MOI.Interrupted,
+    CPX.CPX_STAT_OPTIMAL_FACE_UNBOUNDED => MOI.UnboundedNoResult,
+    CPX.CPX_STAT_ABORT_PRIM_OBJ_LIM     => MOI.ObjectiveLimit,
+    CPX.CPX_STAT_ABORT_DUAL_OBJ_LIM     => MOI.ObjectiveLimit,
+    CPX.CPXMIP_OPTIMAL                  => MOI.Success,
+    CPX.CPXMIP_OPTIMAL_TOL              => MOI.Success,
+    CPX.CPXMIP_INFEASIBLE               => MOI.InfeasibleNoResult,
+    CPX.CPXMIP_SOL_LIM                  => MOI.SolutionLimit,
+    CPX.CPXMIP_NODE_LIM_FEAS            => MOI.NodeLimit,
+    CPX.CPXMIP_NODE_LIM_INFEAS          => MOI.NodeLimit,
+    CPX.CPXMIP_TIME_LIM_FEAS            => MOI.TimeLimit,
+    CPX.CPXMIP_TIME_LIM_INFEAS          => MOI.TimeLimit,
+    CPX.CPXMIP_FAIL_FEAS                => MOI.OtherError,
+    CPX.CPXMIP_FAIL_INFEAS              => MOI.OtherError,
+    CPX.CPXMIP_MEM_LIM_FEAS             => MOI.MemoryLimit,
+    CPX.CPXMIP_MEM_LIM_INFEAS           => MOI.MemoryLimit,
+    CPX.CPXMIP_ABORT_FEAS               => MOI.Interrupted,
+    CPX.CPXMIP_ABORT_INFEAS             => MOI.Interrupted,
+    CPX.CPXMIP_OPTIMAL_INFEAS           => MOI.Success,
+    CPX.CPXMIP_FAIL_FEAS_NO_TREE        => MOI.MemoryLimit,
+    CPX.CPXMIP_FAIL_INFEAS_NO_TREE      => MOI.MemoryLimit,
+    CPX.CPXMIP_UNBOUNDED                => MOI.UnboundedNoResult,
+    CPX.CPXMIP_INForUNBD                => MOI.InfeasibleOrUnbounded
+)
+
 # LQOI.lqs_terminationstatus(m)
 function LQOI.lqs_terminationstatus(model::CPLEXSolverInstance)
     m = model.inner 
-    return MOI.Success
-    # stat_lp = CPX.get_lp_status2(m)
-    # if CPX.is_mip(m)
-    #     stat_mip = CPX.get_mip_status2(m)
-    #     if stat_mip == CPX.MIP_NotLoaded
-    #         return MOI.OtherError
-    #     elseif stat_mip == CPX.MIP_LPNotOptimal
-    #         # MIP search incomplete but there is no linear sol
-    #         # return MOI.OtherError
-    #         return MOI.InfeasibleOrUnbounded
-    #     elseif stat_mip == CPX.MIP_NoSolFound
-    #         # MIP search incomplete but there is no integer sol
-    #         other = xprsmoi_stopstatus(m)
-    #         if other == MOI.OtherError
-    #             return MOI.SlowProgress#OtherLimit
-    #         else 
-    #             return other
-    #         end
 
-    #     elseif stat_mip == CPX.MIP_Solution
-    #         # MIP search incomplete but there is a solution
-    #         other = xprsmoi_stopstatus(m)
-    #         if other == MOI.OtherError
-    #             return MOI.OtherLimit
-    #         else 
-    #             return other
-    #         end
+    code = CPX.cpx_getstat(m)
+    mthd, soltype, prifeas, dualfeas = CPX.cpx_solninfo(m)
 
-    #     elseif stat_mip == CPX.MIP_Infeasible
-    #         if CPX.hasdualray(m)
-    #             return MOI.Success
-    #         else
-    #             return MOI.InfeasibleNoResult
-    #         end
-    #     elseif stat_mip == CPX.MIP_Optimal
-    #         return MOI.Success
-    #     elseif stat_mip == CPX.MIP_Unbounded
-    #         if CPX.hasprimalray(m)
-    #             return MOI.Success
-    #         else
-    #             return MOI.UnboundedNoResult
-    #         end
-    #     end
-    #     return MOI.OtherError
-    # else
-    #     if stat_lp == CPX.LP_Unstarted
-    #         return MOI.OtherError
-    #     elseif stat_lp == CPX.LP_Optimal
-    #         return MOI.Success
-    #     elseif stat_lp == CPX.LP_Infeasible
-    #         if CPX.hasdualray(m)
-    #             return MOI.Success
-    #         else
-    #             return MOI.InfeasibleNoResult
-    #         end
-    #     elseif stat_lp == CPX.LP_CutOff
-    #         return MOI.ObjectiveLimit
-    #     elseif stat_lp == CPX.LP_Unfinished
-    #         return xprsmoi_stopstatus(m)
-    #     elseif stat_lp == CPX.LP_Unbounded
-    #         if CPX.hasprimalray(m)
-    #             return MOI.Success
-    #         else
-    #             return MOI.UnboundedNoResult
-    #         end
-    #     elseif stat_lp == CPX.LP_CutOffInDual
-    #         return MOI.ObjectiveLimit
-    #     elseif stat_lp == CPX.LP_Unsolved
-    #         return MOI.OtherError
-    #     elseif stat_lp == CPX.LP_NonConvex
-    #         return MOI.InvalidInstance
-    #     end
-    #     return MOI.OtherError
-    # end
+    
+    if haskey(TERMINATION_STATUS_MAP, code)
+        out = TERMINATION_STATUS_MAP[code]
+        
+        if code == CPX.CPX_STAT_UNBOUNDED && prifeas > 0
+            out = MOI.Success
+        elseif code == CPX.CPX_STAT_INFEASIBLE && dualfeas > 0
+            out = MOI.Success
+        end
+        return out
+    else
+        error("Status $(code) has not been mapped to a MOI termination status.")
+    end
 end
 
 function LQOI.lqs_primalstatus(model::CPLEXSolverInstance)
     m = model.inner
-    return MOI.FeasiblePoint
-    # if CPX.is_mip(m)
-    #     stat_mip = CPX.get_mip_status2(m)
-    #     if stat_mip in [CPX.MIP_Solution, CPX.MIP_Optimal]
-    #         return MOI.FeasiblePoint
-    #     elseif CPX.MIP_Infeasible && CPX.hasdualray(m)
-    #         return MOI.InfeasibilityCertificate
-    #     elseif CPX.MIP_Unbounded && CPX.hasprimalray(m)
-    #         return MOI.InfeasibilityCertificate
-    #     elseif stat_mip in [CPX.MIP_LPOptimal, CPX.MIP_NoSolFound]
-    #         return MOI.InfeasiblePoint
-    #     end
-    #     return MOI.UnknownResultStatus
-    # else
-    #     stat_lp = CPX.get_lp_status2(m)
-    #     if stat_lp == CPX.LP_Optimal
-    #         return MOI.FeasiblePoint
-    #     elseif stat_lp == CPX.LP_Unbounded && CPX.hasprimalray(m)
-    #         return MOI.InfeasibilityCertificate
-    #     # elseif stat_lp == LP_Infeasible
-    #     #     return MOI.InfeasiblePoint - CPLEX wont return
-    #     # elseif cutoff//cutoffindual ???
-    #     else
-    #         return MOI.UnknownResultStatus
-    #     end
-    # end
+
+    code = CPX.cpx_getstat(m)
+    mthd, soltype, prifeas, dualfeas = CPX.cpx_solninfo(m)
+
+    out = MOI.UnknownResultStatus
+
+    if soltype in [CPX.CPX_NONBASIC_SOLN, CPX.CPX_BASIC_SOLN, CPX.CPX_PRIMAL_SOLN]
+        if prifeas > 0
+            out = MOI.FeasiblePoint
+        else
+            out = MOI.InfeasiblePoint
+        end
+    end
+    if code == CPX.CPX_STAT_UNBOUNDED #&& prifeas > 0
+        out = MOI.InfeasibilityCertificate
+    end
+    return out
 end
 function LQOI.lqs_dualstatus(model::CPLEXSolverInstance)
     m = model.inner    
-    if false#CPX.is_mip(m)
-        return MOI.UnknownResultStatus
-    else
-        return MOI.FeasiblePoint
-        # stat_lp = CPX.get_lp_status2(m)
-        # if stat_lp == CPX.LP_Optimal
-        #     return MOI.FeasiblePoint
-        # elseif stat_lp == CPX.LP_Infeasible && CPX.hasdualray(m)
-        #     return MOI.InfeasibilityCertificate
-        # # elseif stat_lp == LP_Unbounded
-        # #     return MOI.InfeasiblePoint - CPLEX wont return
-        # # elseif cutoff//cutoffindual ???
-        # else
-        #     return MOI.UnknownResultStatus
-        # end
+
+    code = CPX.cpx_getstat(m)
+    mthd, soltype, prifeas, dualfeas = CPX.cpx_solninfo(m)
+    if !LQOI.hasinteger(model)
+        if soltype in [CPX.CPX_NONBASIC_SOLN, CPX.CPX_BASIC_SOLN]
+            if dualfeas > 0
+                out = MOI.FeasiblePoint
+            else
+                out = MOI.InfeasiblePoint
+            end
+        else
+            out = MOI.UnknownResultStatus
+        end
+        if code == CPX.CPX_STAT_INFEASIBLE && dualfeas > 0
+            out = MOI.InfeasibilityCertificate
+        end
+        return out
     end
+    return MOI.UnknownResultStatus
 end
 
 
@@ -379,4 +364,6 @@ Supported file types are solver-dependent.
 """
 MOI.writeproblem(m::CPLEXSolverInstance, filename::String, flags::String="") = CPX.write_model(m.inner, filename, flags)
 
+
+LQOI.lqs_make_problem_type_continuous(m::CPX.Model) = CPX._make_problem_type_continuous(m)
 end # module
