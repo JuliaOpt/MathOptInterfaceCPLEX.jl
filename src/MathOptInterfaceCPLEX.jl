@@ -362,7 +362,7 @@ MOI.free!(m::CPLEXSolverInstance) = CPX.free_model(m.inner)
 Writes the current problem data to the given file.
 Supported file types are solver-dependent.
 """
-MOI.writeproblem(m::CPLEXSolverInstance, filename::String, flags::String="") = CPX.write_model(m.inner, filename, flags)
+writeproblem(m::CPLEXSolverInstance, filename::String, flags::String="") = CPX.write_model(m.inner, filename)
 
 
 LQOI.lqs_make_problem_type_continuous(m::CPX.Model) = CPX._make_problem_type_continuous(m)
