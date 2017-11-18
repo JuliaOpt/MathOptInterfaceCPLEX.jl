@@ -1,40 +1,43 @@
-using CPLEX, Base.Test, MathOptInterface, MathOptInterfaceCPLEX
-include(joinpath(Pkg.dir("MathOptInterface"), "test", "contlinear.jl"))
-include(joinpath(Pkg.dir("MathOptInterface"), "test", "intlinear.jl"))
-include(joinpath(Pkg.dir("MathOptInterface"), "test", "contconic.jl"))
-include(joinpath(Pkg.dir("MathOptInterface"), "test", "contquadratic.jl"))
+using CPLEX, Base.Test, MathOptInterface, MathOptInterfaceTests, MathOptInterfaceCPLEX
 
 
-# contlinear
-linear1test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear2test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear3test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear4test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear5test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear6test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear7test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear8test(MathOptInterfaceCPLEX.MOICPLEXSolver()) # infeasible/unbounded
-linear9test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear10test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-linear11test(MathOptInterfaceCPLEX.MOICPLEXSolver())
+const MOIT = MathOptInterfaceTests
+const MOICPX = MathOptInterfaceCPLEX
 
-# intlinear
-knapsacktest(MathOptInterfaceCPLEX.MOICPLEXSolver())
-int1test(MathOptInterfaceCPLEX.MOICPLEXSolver())
-int2test(MathOptInterfaceCPLEX.MOICPLEXSolver()) # SOS
-int3test(MathOptInterfaceCPLEX.MOICPLEXSolver())
+@testset "MathOptInterfaceCPLEX" begin
+    @testset "Linear tests" begin
+        linconfig = MOIT.TestConfig(1e-8,1e-8,true,true,true)
+        solver = MOICPX.MOICPLEXSolver()
+        MOIT.contlineartest(solver , linconfig, ["linear12","linear8a","linear8b","linear8c"])
+        
+        solver_nopresolve = MOICPX.MOICPLEXSolver(CPX_PARAM_SCRIND=0, CPX_PARAM_PREIND=0)
+        MOIT.contlineartest(solver_nopresolve , linconfig, ["linear12","linear8b","linear8c"])
 
-# contconic
-lin1tests(MathOptInterfaceCPLEX.MOICPLEXSolver())
-lin2tests(MathOptInterfaceCPLEX.MOICPLEXSolver())
-lin3test(MathOptInterfaceCPLEX.MOICPLEXSolver(CPX_PARAM_SCRIND=0, CPX_PARAM_PREIND=0)) # infeasible
-lin4test(MathOptInterfaceCPLEX.MOICPLEXSolver(CPX_PARAM_SCRIND=0, CPX_PARAM_PREIND=0)) # infeasible
+        linconfig_nocertificate = MOIT.TestConfig(1e-8,1e-8,true,true,false)
+        MOIT.linear12test(solver, linconfig_nocertificate)
+        MOIT.linear8ctest(solver, linconfig_nocertificate)
+        MOIT.linear8btest(solver, linconfig_nocertificate)
+    end
 
-# # contquadratic
-qp1test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-5)
-qp2test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-5)
-qp3test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-3)
-qcp1test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-4)
-qcp2test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-5)
-qcp3test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-5)
-socp1test(MathOptInterfaceCPLEX.MOICPLEXSolver(), atol = 1e-5)
+    @testset "Quadratic tests" begin
+        quadconfig = MOIT.TestConfig(1e-5,1e-3,false,true,true)
+        solver = MOICPX.MOICPLEXSolver()
+        MOIT.contquadratictest(solver, quadconfig)
+    end
+
+    @testset "Linear Conic tests" begin
+        linconfig = MOIT.TestConfig(1e-8,1e-8,true,true,true)
+        solver = MOICPX.MOICPLEXSolver()
+        MOIT.lintest(solver, linconfig, ["lin3","lin4"])
+
+        solver_nopresolve = MOICPX.MOICPLEXSolver(CPX_PARAM_SCRIND=0, CPX_PARAM_PREIND=0)
+        MOIT.lintest(solver_nopresolve, linconfig)
+    end
+
+    @testset "Integer Linear tests" begin
+        intconfig = MOIT.TestConfig(1e-8,1e-8,true,true,true)
+        solver = MOICPX.MOICPLEXSolver()
+        MOIT.intlineartest(solver, intconfig)
+    end
+end
+;
