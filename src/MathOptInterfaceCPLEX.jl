@@ -2,6 +2,8 @@ module MathOptInterfaceCPLEX
 
 import Base.show, Base.copy
 
+export CPLEXSolverInstance
+
 # Standard LP interface
 # importall MathProgBase.SolverInterface
 
@@ -12,29 +14,18 @@ const MOI = MathOptInterface
 using LinQuadOptInterface
 const LQOI = LinQuadOptInterface
 
-
-export MOICPLEXSolver
-struct MOICPLEXSolver <: LQOI.LinQuadSolver
-    options
-end
-function MOICPLEXSolver(;kwargs...)
-    return MOICPLEXSolver(kwargs)
-end
-
 import CPLEX.Model
 mutable struct CPLEXSolverInstance <: LQOI.LinQuadSolverInstance
-
     LQOI.@LinQuadSolverInstanceBase
-    
 end
 
-function MOI.SolverInstance(s::MOICPLEXSolver)
+function CPLEXSolverInstance(;kwargs...)
 
     env = CPX.Env()
     m = CPLEXSolverInstance(
         (LQOI.@LinQuadSolverInstanceBaseInit)...,
     )
-    for (name,value) in s.options
+    for (name,value) in kwargs
         CPX.cpx_setparam!(m.inner.env, string(name), value)
     end
     # csi.inner.mipstart_effort = s.mipstart_effortlevel
@@ -73,9 +64,7 @@ const SUPPORTED_OBJECTIVES = [
     LQOI.Quad
 ]
 
-LQOI.lqs_supported_constraints(s::MOICPLEXSolver) = SUPPORTED_CONSTRAINTS
 LQOI.lqs_supported_constraints(s::CPLEXSolverInstance) = SUPPORTED_CONSTRAINTS
-LQOI.lqs_supported_objectives(s::MOICPLEXSolver) = SUPPORTED_OBJECTIVES
 LQOI.lqs_supported_objectives(s::CPLEXSolverInstance) = SUPPORTED_OBJECTIVES
 
 
