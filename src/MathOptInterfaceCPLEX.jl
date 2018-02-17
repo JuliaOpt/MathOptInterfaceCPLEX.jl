@@ -1,11 +1,6 @@
 module MathOptInterfaceCPLEX
 
-import Base.show, Base.copy
-
-export CPLEXSolverInstance
-
-# Standard LP interface
-# importall MathProgBase.SolverInterface
+export CPLEXOptimizer
 
 using CPLEX
 const CPX = CPLEX
@@ -14,26 +9,10 @@ const MOI = MathOptInterface
 using LinQuadOptInterface
 const LQOI = LinQuadOptInterface
 
-import CPLEX.Model
-mutable struct CPLEXSolverInstance <: LQOI.LinQuadSolverInstance
-    LQOI.@LinQuadSolverInstanceBase
-end
-
-function CPLEXSolverInstance(;kwargs...)
-
-    env = CPX.Env()
-    m = CPLEXSolverInstance(
-        (LQOI.@LinQuadSolverInstanceBaseInit)...,
-    )
-    for (name,value) in kwargs
-        CPX.cpx_setparam!(m.inner.env, string(name), value)
-    end
-    # csi.inner.mipstart_effort = s.mipstart_effortlevel
-    # if s.logfile != ""
-    #     LQOI.lqs_setlogfile!(env, s.logfile)
-    # end
-    return m
-end
+const SUPPORTED_OBJECTIVES = [
+    LQOI.Linear,
+    LQOI.Quad
+]
 
 const SUPPORTED_CONSTRAINTS = [
     (LQOI.Linear, LQOI.EQ),
@@ -49,8 +28,8 @@ const SUPPORTED_CONSTRAINTS = [
     (LQOI.SinVar, LQOI.IV),
     (LQOI.SinVar, MOI.ZeroOne),
     (LQOI.SinVar, MOI.Integer),
-    (LQOI.VecVar, MOI.SOS1),
-    (LQOI.VecVar, MOI.SOS2),
+    (LQOI.VecVar, LQOI.SOS1),
+    (LQOI.VecVar, LQOI.SOS2),
     (LQOI.VecVar, MOI.Nonnegatives),
     (LQOI.VecVar, MOI.Nonpositives),
     (LQOI.VecVar, MOI.Zeros),
@@ -59,13 +38,38 @@ const SUPPORTED_CONSTRAINTS = [
     (LQOI.VecLin, MOI.Zeros)
 ]
 
-const SUPPORTED_OBJECTIVES = [
-    LQOI.Linear,
-    LQOI.Quad
-]
+mutable struct CPLEXOptimizer <: LQOI.LinQuadOptimizer
+    LQOI.@LinQuadOptimizerBase
+    env
+    params::Dict{String,Any}
+    CPLEXOptimizer(::Void) = new()
+end
 
-LQOI.lqs_supported_constraints(s::CPLEXSolverInstance) = SUPPORTED_CONSTRAINTS
-LQOI.lqs_supported_objectives(s::CPLEXSolverInstance) = SUPPORTED_OBJECTIVES
+LQOI.LinQuadModel(::Type{CPLEXOptimizer},env) = CPX.Model(env)
+
+function CPLEXOptimizer(;kwargs...)
+
+    env = CPX.Env()
+    m = CPLEXOptimizer(nothing)
+    m.env = env
+    m.params = Dict{String,Any}()
+    MOI.empty!(m)
+    for (name,value) in kwargs
+        m.params[string(name)] = value        
+        CPX.cpx_setparam!(m.inner.env, string(name), value)
+    end
+    return m
+end
+
+function MOI.empty!(m::CPLEXOptimizer) 
+    MOI.empty!(m,m.env)
+    for (name,value) in m.params
+        CPX.cpx_setparam!(m.inner.env, string(name), value)
+    end
+end
+
+LQOI.lqs_supported_constraints(s::CPLEXOptimizer) = SUPPORTED_CONSTRAINTS
+LQOI.lqs_supported_objectives(s::CPLEXOptimizer) = SUPPORTED_OBJECTIVES
 
 
 #=
@@ -81,11 +85,11 @@ LQOI.lqs_supported_objectives(s::CPLEXSolverInstance) = SUPPORTED_OBJECTIVES
 
 # LQOI.lqs_setparam!(env, name, val)
 # TODO fix this one
-LQOI.lqs_setparam!(m::CPLEXSolverInstance, name, val) = CPX.cpx_setparam!(m.inner, string(name), val)
+LQOI.lqs_setparam!(m::CPLEXOptimizer, name, val) = CPX.cpx_setparam!(m.inner, string(name), val)
 
 # LQOI.lqs_setlogfile!(env, path)
 # TODO fix this one
-LQOI.lqs_setlogfile!(m::CPLEXSolverInstance, path) = CPX.setlogfile(m.inner, path::String)
+LQOI.lqs_setlogfile!(m::CPLEXOptimizer, path) = CPX.setlogfile(m.inner, path::String)
 
 # LQOI.lqs_getprobtype(m)
 # TODO - consider removing, apparently useless
@@ -94,72 +98,69 @@ LQOI.lqs_setlogfile!(m::CPLEXSolverInstance, path) = CPX.setlogfile(m.inner, pat
     Constraints
 =#
 
-cintvec(v::Vector) = convert(Vector{Int32}, v)
-cdoublevec(v::Vector) = convert(Vector{Float64}, v)
-
 # LQOI.lqs_chgbds!(m, colvec, valvec, sensevec)
-LQOI.lqs_chgbds!(instance::CPLEXSolverInstance, colvec, valvec, sensevec) = CPX.cpx_chgbds!(instance.inner, colvec, valvec, sensevec)
+LQOI.lqs_chgbds!(instance::CPLEXOptimizer, colvec, valvec, sensevec) = CPX.cpx_chgbds!(instance.inner, colvec, valvec, sensevec)
 
 # LQOI.lqs_getlb(m, col)
-LQOI.lqs_getlb(instance::CPLEXSolverInstance, col) = CPX.cpx_getlb(instance.inner, col)
+LQOI.lqs_getlb(instance::CPLEXOptimizer, col) = CPX.cpx_getlb(instance.inner, col)
 # LQOI.lqs_getub(m, col)
-LQOI.lqs_getub(instance::CPLEXSolverInstance, col) = CPX.cpx_getub(instance.inner, col)
+LQOI.lqs_getub(instance::CPLEXOptimizer, col) = CPX.cpx_getub(instance.inner, col)
 
 # LQOI.lqs_getnumrows(m)
-LQOI.lqs_getnumrows(instance::CPLEXSolverInstance) = CPX.cpx_getnumrows(instance.inner)
+LQOI.lqs_getnumrows(instance::CPLEXOptimizer) = CPX.cpx_getnumrows(instance.inner)
 
 # LQOI.lqs_addrows!(m, rowvec, colvec, coefvec, sensevec, rhsvec)
-LQOI.lqs_addrows!(instance::CPLEXSolverInstance, rowvec, colvec, coefvec, sensevec, rhsvec) = CPX.cpx_addrows!(instance.inner, rowvec, colvec, coefvec, sensevec, rhsvec)
+LQOI.lqs_addrows!(instance::CPLEXOptimizer, rowvec, colvec, coefvec, sensevec, rhsvec) = CPX.cpx_addrows!(instance.inner, rowvec, colvec, coefvec, sensevec, rhsvec)
 
 # LQOI.lqs_getrhs(m, rowvec)
-LQOI.lqs_getrhs(instance::CPLEXSolverInstance, row) = CPX.cpx_getrhs(instance.inner, row)  
+LQOI.lqs_getrhs(instance::CPLEXOptimizer, row) = CPX.cpx_getrhs(instance.inner, row)  
 
 # colvec, coef = LQOI.lqs_getrows(m, rowvec)
 # TODO improve
-function LQOI.lqs_getrows(instance::CPLEXSolverInstance, idx)
+function LQOI.lqs_getrows(instance::CPLEXOptimizer, idx)
     return CPX.cpx_getrows(instance.inner, idx)
 end
 
 # LQOI.lqs_getcoef(m, row, col) #??
 # TODO improve
-LQOI.lqs_getcoef(instance::CPLEXSolverInstance, row, col) = CPX.cpx_getcoef(instance.inner, row, col)
+LQOI.lqs_getcoef(instance::CPLEXOptimizer, row, col) = CPX.cpx_getcoef(instance.inner, row, col)
 
 # LQOI.lqs_chgcoef!(m, row, col, coef)
 # TODO SPLIT THIS ONE
-LQOI.lqs_chgcoef!(instance::CPLEXSolverInstance, row, col, coef)  = CPX.cpx_chgcoef!(instance.inner, row, col, coef)
+LQOI.lqs_chgcoef!(instance::CPLEXOptimizer, row, col, coef)  = CPX.cpx_chgcoef!(instance.inner, row, col, coef)
 
 # LQOI.lqs_delrows!(m, row, row)
-LQOI.lqs_delrows!(instance::CPLEXSolverInstance, rowbeg, rowend) = CPX.cpx_delrows!(instance.inner, rowbeg, rowend)
+LQOI.lqs_delrows!(instance::CPLEXOptimizer, rowbeg, rowend) = CPX.cpx_delrows!(instance.inner, rowbeg, rowend)
 
 # LQOI.lqs_chgctype!(m, colvec, typevec)
 # TODO fix types
-LQOI.lqs_chgctype!(instance::CPLEXSolverInstance, colvec, typevec) = CPX.cpx_chgctype!(instance.inner, colvec, typevec)
+LQOI.lqs_chgctype!(instance::CPLEXOptimizer, colvec, typevec) = CPX.cpx_chgctype!(instance.inner, colvec, typevec)
 
 # LQOI.lqs_chgsense!(m, rowvec, sensevec)
 # TODO fix types
-LQOI.lqs_chgsense!(instance::CPLEXSolverInstance, rowvec, sensevec) = CPX.cpx_chgsense!(instance.inner, rowvec, sensevec)
+LQOI.lqs_chgsense!(instance::CPLEXOptimizer, rowvec, sensevec) = CPX.cpx_chgsense!(instance.inner, rowvec, sensevec)
 
 const VAR_TYPE_MAP = Dict{Symbol,Cchar}(
     :CONTINUOUS => Cchar('C'),
     :INTEGER => Cchar('I'),
     :BINARY => Cchar('B')
 )
-LQOI.lqs_vartype_map(m::CPLEXSolverInstance) = VAR_TYPE_MAP
+LQOI.lqs_vartype_map(m::CPLEXOptimizer) = VAR_TYPE_MAP
 
 # LQOI.lqs_addsos(m, colvec, valvec, typ)
-LQOI.lqs_addsos!(instance::CPLEXSolverInstance, colvec, valvec, typ) = CPX.add_sos!(instance.inner, typ, colvec, valvec)
+LQOI.lqs_addsos!(instance::CPLEXOptimizer, colvec, valvec, typ) = CPX.add_sos!(instance.inner, typ, colvec, valvec)
 # LQOI.lqs_delsos(m, idx, idx)
-LQOI.lqs_delsos!(instance::CPLEXSolverInstance, idx1, idx2) = CPX.cpx_delsos!(instance.inner, idx1, idx2)
+LQOI.lqs_delsos!(instance::CPLEXOptimizer, idx1, idx2) = CPX.cpx_delsos!(instance.inner, idx1, idx2)
 
 const SOS_TYPE_MAP = Dict{Symbol,Symbol}(
     :SOS1 => :SOS1,#Cchar('1'),
     :SOS2 => :SOS2#Cchar('2')
 )
-LQOI.lqs_sertype_map(m::CPLEXSolverInstance) = SOS_TYPE_MAP
+LQOI.lqs_sertype_map(m::CPLEXOptimizer) = SOS_TYPE_MAP
 
 # LQOI.lqs_getsos(m, idx)
 # TODO improve getting processes
-function LQOI.lqs_getsos(instance::CPLEXSolverInstance, idx)
+function LQOI.lqs_getsos(instance::CPLEXOptimizer, idx)
     indices, weights, types = CPX.cpx_getsos(instance.inner, idx)
 
     # types2 = Array{Symbol}(length(types))
@@ -174,13 +175,13 @@ function LQOI.lqs_getsos(instance::CPLEXSolverInstance, idx)
     return indices, weights, types == Cchar('1') ? :SOS1 : :SOS2
 end
 # LQOI.lqs_getnumqconstrs(m)
-LQOI.lqs_getnumqconstrs(instance::CPLEXSolverInstance) = CPX.cpx_getnumqconstrs(instance.inner)
+LQOI.lqs_getnumqconstrs(instance::CPLEXOptimizer) = CPX.cpx_getnumqconstrs(instance.inner)
 
 # LQOI.lqs_addqconstr(m, cols,coefs,rhs,sense, I,J,V)
-LQOI.lqs_addqconstr!(instance::CPLEXSolverInstance, cols,coefs,rhs,sense, I,J,V) = CPX.cpx_addqconstr!(instance.inner, cols,coefs,rhs,sense, I,J,V)
+LQOI.lqs_addqconstr!(instance::CPLEXOptimizer, cols,coefs,rhs,sense, I,J,V) = CPX.cpx_addqconstr!(instance.inner, cols,coefs,rhs,sense, I,J,V)
 
 # LQOI.lqs_chgrngval
-LQOI.lqs_chgrngval!(instance::CPLEXSolverInstance, rows, vals) = CPX.cpx_chgrngval!(instance.inner, rows, vals)
+LQOI.lqs_chgrngval!(instance::CPLEXOptimizer, rows, vals) = CPX.cpx_chgrngval!(instance.inner, rows, vals)
 
 const CTR_TYPE_MAP = Dict{Symbol,Cchar}(
     :RANGE => Cchar('R'),
@@ -188,57 +189,57 @@ const CTR_TYPE_MAP = Dict{Symbol,Cchar}(
     :UPPER => Cchar('U'),
     :EQUALITY => Cchar('E')
 )
-LQOI.lqs_ctrtype_map(m::CPLEXSolverInstance) = CTR_TYPE_MAP
+LQOI.lqs_ctrtype_map(m::CPLEXOptimizer) = CTR_TYPE_MAP
 
 #=
     Objective
 =#
 
 # LQOI.lqs_copyquad(m, intvec,intvec, floatvec) #?
-LQOI.lqs_copyquad!(instance::CPLEXSolverInstance, I, J, V) = CPX.cpx_copyquad!(instance.inner, I, J, V)
+LQOI.lqs_copyquad!(instance::CPLEXOptimizer, I, J, V) = CPX.cpx_copyquad!(instance.inner, I, J, V)
 
 # LQOI.lqs_chgobj(m, colvec,coefvec)
-LQOI.lqs_chgobj!(instance::CPLEXSolverInstance, colvec, coefvec)  = CPX.cpx_chgobj!(instance.inner, colvec, coefvec) 
+LQOI.lqs_chgobj!(instance::CPLEXOptimizer, colvec, coefvec)  = CPX.cpx_chgobj!(instance.inner, colvec, coefvec) 
 
 # LQOI.lqs_chgobjsen(m, symbol)
 # TODO improve min max names
-LQOI.lqs_chgobjsen!(instance::CPLEXSolverInstance, symbol) = CPX.cpx_chgobjsen!(instance.inner, symbol)
+LQOI.lqs_chgobjsen!(instance::CPLEXOptimizer, symbol) = CPX.cpx_chgobjsen!(instance.inner, symbol)
     
 
 # LQOI.lqs_getobj(m)
-LQOI.lqs_getobj(instance::CPLEXSolverInstance) = CPX.cpx_getobj(instance.inner) 
+LQOI.lqs_getobj(instance::CPLEXOptimizer) = CPX.cpx_getobj(instance.inner) 
 
 # lqs_getobjsen(m)
-LQOI.lqs_getobjsen(instance::CPLEXSolverInstance) = CPX.cpx_getobjsen(instance.inner)
+LQOI.lqs_getobjsen(instance::CPLEXOptimizer) = CPX.cpx_getobjsen(instance.inner)
 
 #=
     Variables
 =#
 
 # LQOI.lqs_getnumcols(m)
-LQOI.lqs_getnumcols(instance::CPLEXSolverInstance) = CPX.cpx_getnumcols(instance.inner)
+LQOI.lqs_getnumcols(instance::CPLEXOptimizer) = CPX.cpx_getnumcols(instance.inner)
 
 # LQOI.lqs_newcols!(m, int)
-LQOI.lqs_newcols!(instance::CPLEXSolverInstance, int) = CPX.cpx_newcols!(instance.inner, int)
+LQOI.lqs_newcols!(instance::CPLEXOptimizer, int) = CPX.cpx_newcols!(instance.inner, int)
 
 # LQOI.lqs_delcols!(m, col, col)
-LQOI.lqs_delcols!(instance::CPLEXSolverInstance, col, col2) = CPX.cpx_delcols!(instance.inner, col, col2)
+LQOI.lqs_delcols!(instance::CPLEXOptimizer, col, col2) = CPX.cpx_delcols!(instance.inner, col, col2)
 
 # LQOI.lqs_addmipstarts(m, colvec, valvec)
-LQOI.lqs_addmipstarts!(instance::CPLEXSolverInstance, colvec, valvec)  = CPX.cpx_addmipstarts!(instance.inner, colvec, valvec) 
+LQOI.lqs_addmipstarts!(instance::CPLEXOptimizer, colvec, valvec)  = CPX.cpx_addmipstarts!(instance.inner, colvec, valvec) 
 
 #=
     Solve
 =#
 
 # LQOI.lqs_mipopt!(m)
-LQOI.lqs_mipopt!(instance::CPLEXSolverInstance) = CPX.cpx_mipopt!(instance.inner)
+LQOI.lqs_mipopt!(instance::CPLEXOptimizer) = CPX.cpx_mipopt!(instance.inner)
 
 # LQOI.lqs_qpopt!(m)
-LQOI.lqs_qpopt!(instance::CPLEXSolverInstance) = CPX.cpx_qpopt!(instance.inner)
+LQOI.lqs_qpopt!(instance::CPLEXOptimizer) = CPX.cpx_qpopt!(instance.inner)
 
 # LQOI.lqs_lpopt!(m)
-LQOI.lqs_lpopt!(instance::CPLEXSolverInstance) = CPX.cpx_lpopt!(instance.inner)
+LQOI.lqs_lpopt!(instance::CPLEXOptimizer) = CPX.cpx_lpopt!(instance.inner)
 
 
 const TERMINATION_STATUS_MAP = Dict(
@@ -277,7 +278,7 @@ const TERMINATION_STATUS_MAP = Dict(
 )
 
 # LQOI.lqs_terminationstatus(m)
-function LQOI.lqs_terminationstatus(model::CPLEXSolverInstance)
+function LQOI.lqs_terminationstatus(model::CPLEXOptimizer)
     m = model.inner 
 
     code = CPX.cpx_getstat(m)
@@ -298,7 +299,7 @@ function LQOI.lqs_terminationstatus(model::CPLEXSolverInstance)
     end
 end
 
-function LQOI.lqs_primalstatus(model::CPLEXSolverInstance)
+function LQOI.lqs_primalstatus(model::CPLEXOptimizer)
     m = model.inner
 
     code = CPX.cpx_getstat(m)
@@ -318,7 +319,7 @@ function LQOI.lqs_primalstatus(model::CPLEXSolverInstance)
     end
     return out
 end
-function LQOI.lqs_dualstatus(model::CPLEXSolverInstance)
+function LQOI.lqs_dualstatus(model::CPLEXOptimizer)
     m = model.inner    
 
     code = CPX.cpx_getstat(m)
@@ -343,51 +344,51 @@ end
 
 
 # LQOI.lqs_getx!(m, place)
-LQOI.lqs_getx!(instance::CPLEXSolverInstance, place) = CPX.cpx_getx!(instance.inner, place) 
+LQOI.lqs_getx!(instance::CPLEXOptimizer, place) = CPX.cpx_getx!(instance.inner, place) 
 
 # LQOI.lqs_getax!(m, place)
-LQOI.lqs_getax!(instance::CPLEXSolverInstance, place) = CPX.cpx_getax!(instance.inner, place)
+LQOI.lqs_getax!(instance::CPLEXOptimizer, place) = CPX.cpx_getax!(instance.inner, place)
 
 # LQOI.lqs_getdj!(m, place)
-LQOI.lqs_getdj!(instance::CPLEXSolverInstance, place) = CPX.cpx_getdj!(instance.inner, place)
+LQOI.lqs_getdj!(instance::CPLEXOptimizer, place) = CPX.cpx_getdj!(instance.inner, place)
 
 # LQOI.lqs_getpi!(m, place)
-LQOI.lqs_getpi!(instance::CPLEXSolverInstance, place) = CPX.cpx_getpi!(instance.inner, place)
+LQOI.lqs_getpi!(instance::CPLEXOptimizer, place) = CPX.cpx_getpi!(instance.inner, place)
 
 # LQOI.lqs_getobjval(m)
-LQOI.lqs_getobjval(instance::CPLEXSolverInstance) = CPX.cpx_getobjval(instance.inner)
+LQOI.lqs_getobjval(instance::CPLEXOptimizer) = CPX.cpx_getobjval(instance.inner)
 
 # LQOI.lqs_getbestobjval(m)
-LQOI.lqs_getbestobjval(instance::CPLEXSolverInstance) = CPX.cpx_getbestobjval(instance.inner)
+LQOI.lqs_getbestobjval(instance::CPLEXOptimizer) = CPX.cpx_getbestobjval(instance.inner)
 
 # LQOI.lqs_getmiprelgap(m)
-LQOI.lqs_getmiprelgap(instance::CPLEXSolverInstance) = CPX.cpx_getmiprelgap(instance.inner)
+LQOI.lqs_getmiprelgap(instance::CPLEXOptimizer) = CPX.cpx_getmiprelgap(instance.inner)
 
 # LQOI.lqs_getitcnt(m)
-LQOI.lqs_getitcnt(instance::CPLEXSolverInstance)  = CPX.cpx_getitcnt(instance.inner)
+LQOI.lqs_getitcnt(instance::CPLEXOptimizer)  = CPX.cpx_getitcnt(instance.inner)
 
 # LQOI.lqs_getbaritcnt(m)
-LQOI.lqs_getbaritcnt(instance::CPLEXSolverInstance) = CPX.cpx_getbaritcnt(instance.inner)
+LQOI.lqs_getbaritcnt(instance::CPLEXOptimizer) = CPX.cpx_getbaritcnt(instance.inner)
 
 # LQOI.lqs_getnodecnt(m)
-LQOI.lqs_getnodecnt(instance::CPLEXSolverInstance) = CPX.cpx_getnodecnt(instance.inner)
+LQOI.lqs_getnodecnt(instance::CPLEXOptimizer) = CPX.cpx_getnodecnt(instance.inner)
 
 # LQOI.lqs_dualfarkas(m, place)
-LQOI.lqs_dualfarkas!(instance::CPLEXSolverInstance, place) = CPX.cpx_dualfarkas!(instance.inner, place)
+LQOI.lqs_dualfarkas!(instance::CPLEXOptimizer, place) = CPX.cpx_dualfarkas!(instance.inner, place)
 
 # LQOI.lqs_getray(m, place)
-LQOI.lqs_getray!(instance::CPLEXSolverInstance, place) = CPX.cpx_getray!(instance.inner, place)
+LQOI.lqs_getray!(instance::CPLEXOptimizer, place) = CPX.cpx_getray!(instance.inner, place)
 
 
-MOI.free!(instance::CPLEXSolverInstance) = CPX.free_model(instance.inner)
+MOI.free!(instance::CPLEXOptimizer) = CPX.free_model(instance.inner)
 
 """
-    writeproblem(m::AbstractSolverInstance, filename::String)
+    writeproblem(m: :MOI.AbstractOptimizer, filename::String)
 Writes the current problem data to the given file.
 Supported file types are solver-dependent.
 """
-writeproblem(instance::CPLEXSolverInstance, filename::String, flags::String="") = CPX.write_model(instance.inner, filename)
+writeproblem(instance::CPLEXOptimizer, filename::String, flags::String="") = CPX.write_model(instance.inner, filename)
 
 
-LQOI.lqs_make_problem_type_continuous(instance::CPLEXSolverInstance) = CPX._make_problem_type_continuous(instance.inner)
+LQOI.lqs_make_problem_type_continuous(instance::CPLEXOptimizer) = CPX._make_problem_type_continuous(instance.inner)
 end # module
