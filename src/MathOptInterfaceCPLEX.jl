@@ -1,3 +1,4 @@
+__precompile__()
 module MathOptInterfaceCPLEX
 
 export CPLEXOptimizer
@@ -199,8 +200,16 @@ LQOI.lqs_ctrtype_map(m::CPLEXOptimizer) = CTR_TYPE_MAP
 LQOI.lqs_copyquad!(instance::CPLEXOptimizer, I, J, V) = CPX.cpx_copyquad!(instance.inner, I, J, V)
 
 # LQOI.lqs_chgobj(m, colvec,coefvec)
-LQOI.lqs_chgobj!(instance::CPLEXOptimizer, colvec, coefvec)  = CPX.cpx_chgobj!(instance.inner, colvec, coefvec) 
-
+function LQOI.lqs_chgobj!(instance::CPLEXOptimizer, colvec, coefvec)
+    ncols = CPX.cpx_getnumcols(instance.inner)
+    new_colvec = collect(1:ncols)
+    new_coefvec = zeros(ncols)
+    for (ind,val) in enumerate(colvec)
+        new_coefvec[val] = coefvec[ind]
+    end
+    # this only sums to obj
+    CPX.cpx_chgobj!(instance.inner, new_colvec, new_coefvec) 
+end
 # LQOI.lqs_chgobjsen(m, symbol)
 # TODO improve min max names
 LQOI.lqs_chgobjsen!(instance::CPLEXOptimizer, symbol) = CPX.cpx_chgobjsen!(instance.inner, symbol)
@@ -240,7 +249,6 @@ LQOI.lqs_qpopt!(instance::CPLEXOptimizer) = CPX.cpx_qpopt!(instance.inner)
 
 # LQOI.lqs_lpopt!(m)
 LQOI.lqs_lpopt!(instance::CPLEXOptimizer) = CPX.cpx_lpopt!(instance.inner)
-
 
 const TERMINATION_STATUS_MAP = Dict(
     CPX.CPX_STAT_OPTIMAL                => MOI.Success,
