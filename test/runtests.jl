@@ -7,15 +7,18 @@ const MOICPX = MathOptInterfaceCPLEX
     @testset "Linear tests" begin
         linconfig = MOIT.TestConfig()
         solver = CPLEXOptimizer()
-        MOIT.contlineartest(solver, linconfig, ["linear12","linear8a","linear8b","linear8c"])
+        MOIT.contlineartest(solver, linconfig, ["linear10","linear12","linear8a","linear8b","linear8c"])
         
         solver_nopresolve = CPLEXOptimizer(CPX_PARAM_SCRIND=0, CPX_PARAM_PREIND=0)
-        MOIT.contlineartest(solver_nopresolve , linconfig, ["linear12","linear8b","linear8c"])
+        MOIT.contlineartest(solver_nopresolve , linconfig, ["linear10","linear12","linear8b","linear8c"])
 
         linconfig_nocertificate = MOIT.TestConfig(infeas_certificates=false)
         MOIT.linear12test(solver, linconfig_nocertificate)
         MOIT.linear8ctest(solver, linconfig_nocertificate)
         MOIT.linear8btest(solver, linconfig_nocertificate)
+
+        linconfig_noquery = MOIT.TestConfig(query=false)
+        MOIT.linear10test(solver, linconfig_noquery)
     end
 
     @testset "Quadratic tests" begin
@@ -37,6 +40,15 @@ const MOICPX = MathOptInterfaceCPLEX
         intconfig = MOIT.TestConfig()
         solver = CPLEXOptimizer()
         MOIT.intlineartest(solver, intconfig)
+    end
+
+    @testset "ModelLike tests" begin
+        intconfig = MOIT.TestConfig()
+        solver = XpressOptimizer()
+        MOIT.validtest(solver)
+        MOIT.emptytest(solver)
+        solver2 = XpressOptimizer()
+        MOIT.copytest(solver,solver2)
     end
 end
 ;
