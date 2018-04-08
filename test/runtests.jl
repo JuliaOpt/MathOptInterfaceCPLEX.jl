@@ -44,10 +44,10 @@ const MOICPX = MathOptInterfaceCPLEX
 
     @testset "ModelLike tests" begin
         intconfig = MOIT.TestConfig()
-        solver = XpressOptimizer()
+        solver = CPLEXOptimizer()
         MOIT.validtest(solver)
         MOIT.emptytest(solver)
-        solver2 = XpressOptimizer()
+        solver2 = CPLEXOptimizer()
         MOIT.copytest(solver,solver2)
     end
 end
